@@ -20,7 +20,7 @@ import { IEditorGroupsService, IEditorGroup, GroupsOrder, IEditorReplacement, Gr
 import { IResourceEditor, SIDE_GROUP, IResourceEditorReplacement, IOpenEditorOverrideHandler, IVisibleEditor, IEditorService, SIDE_GROUP_TYPE, ACTIVE_GROUP_TYPE, ISaveEditorsOptions, ISaveAllEditorsOptions, IRevertAllEditorsOptions, IBaseSaveRevertAllEditorOptions } from 'vs/workbench/services/editor/common/editorService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { Disposable, IDisposable, dispose, toDisposable, DisposableStore } from 'vs/base/common/lifecycle';
-import { coalesce } from 'vs/base/common/arrays';
+import { coalesce, flatten } from 'vs/base/common/arrays';
 import { isCodeEditor, isDiffEditor, ICodeEditor, IDiffEditor } from 'vs/editor/browser/editorBrowser';
 import { IEditorGroupView, IEditorOpeningEvent, EditorServiceImpl } from 'vs/workbench/browser/parts/editor/editor';
 import { ILabelService } from 'vs/platform/label/common/label';
@@ -229,6 +229,10 @@ export class EditorService extends Disposable implements EditorServiceImpl {
 
 	get visibleTextEditorWidgets(): Array<ICodeEditor | IDiffEditor> {
 		return this.visibleControls.map(control => control.getControl() as ICodeEditor | IDiffEditor).filter(widget => isCodeEditor(widget) || isDiffEditor(widget));
+	}
+
+	get textEditorWidgets(): Array<ICodeEditor | IDiffEditor> {
+		return flatten(this.editorGroupService.groups.map(group => group.controls)).map(control => control.getControl() as ICodeEditor | IDiffEditor).filter(widget => isCodeEditor(widget) || isDiffEditor(widget));
 	}
 
 	get visibleEditors(): IEditorInput[] {
@@ -882,6 +886,7 @@ export class DelegatingEditorService implements IEditorService {
 	get visibleEditors(): ReadonlyArray<IEditorInput> { return this.editorService.visibleEditors; }
 	get visibleControls(): ReadonlyArray<IVisibleEditor> { return this.editorService.visibleControls; }
 	get visibleTextEditorWidgets(): ReadonlyArray<ICodeEditor | IDiffEditor> { return this.editorService.visibleTextEditorWidgets; }
+	get textEditorWidgets(): ReadonlyArray<ICodeEditor | IDiffEditor> { return this.editorService.textEditorWidgets; }
 	get editors(): ReadonlyArray<IEditorInput> { return this.editorService.editors; }
 	get count(): number { return this.editorService.count; }
 

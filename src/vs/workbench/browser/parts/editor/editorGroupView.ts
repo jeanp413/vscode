@@ -737,6 +737,10 @@ export class EditorGroupView extends Themable implements IEditorGroupView {
 		return this.editorControl ? withNullAsUndefined(this.editorControl.activeControl) : undefined;
 	}
 
+	get controls(): IEditor[] {
+		return this.editorControl ? this.editorControl.controls : [];
+	}
+
 	get activeEditor(): EditorInput | null {
 		return this._group.activeEditor;
 	}

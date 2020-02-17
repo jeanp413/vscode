@@ -408,6 +408,11 @@ export interface IEditorGroup {
 	readonly activeControl: IVisibleEditor | undefined;
 
 	/**
+	 * All the instantiated controls of the group.
+	 */
+	readonly controls: IEditor[];
+
+	/**
 	 * The active editor is the currently visible editor of the group
 	 * within the current active control.
 	 */

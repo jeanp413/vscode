@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable, DisposableStore } from 'vs/base/common/lifecycle';
-import { EditorInput, EditorOptions } from 'vs/workbench/common/editor';
+import { EditorInput, EditorOptions, IEditor } from 'vs/workbench/common/editor';
 import { Dimension, show, hide, addClass } from 'vs/base/browser/dom';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { IEditorRegistry, Extensions as EditorExtensions, IEditorDescriptor } from 'vs/workbench/browser/editor';
@@ -36,7 +36,7 @@ export class EditorControl extends Disposable {
 	readonly onDidSizeConstraintsChange = this._onDidSizeConstraintsChange.event;
 
 	private _activeControl: BaseEditor | null = null;
-	private controls: BaseEditor[] = [];
+	private _controls: BaseEditor[] = [];
 
 	private readonly activeControlDisposables = this._register(new DisposableStore());
 	private dimension: Dimension | undefined;
@@ -56,6 +56,10 @@ export class EditorControl extends Disposable {
 
 	get activeControl(): IVisibleEditor | null {
 		return this._activeControl as IVisibleEditor | null;
+	}
+
+	get controls(): IEditor[] {
+		return this._controls as IEditor[];
 	}
 
 	async openEditor(editor: EditorInput, options?: EditorOptions): Promise<IOpenEditorResult> {
@@ -124,14 +128,14 @@ export class EditorControl extends Disposable {
 	private doInstantiateEditorControl(descriptor: IEditorDescriptor): BaseEditor {
 
 		// Return early if already instantiated
-		const existingControl = this.controls.filter(control => descriptor.describes(control))[0];
+		const existingControl = this._controls.filter(control => descriptor.describes(control))[0];
 		if (existingControl) {
 			return existingControl;
 		}
 
 		// Otherwise instantiate new
 		const control = this._register(descriptor.instantiate(this.instantiationService));
-		this.controls.push(control);
+		this._controls.push(control);
 
 		return control;
 	}

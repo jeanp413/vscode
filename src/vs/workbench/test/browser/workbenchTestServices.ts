@@ -465,6 +465,7 @@ export class TestEditorGroupView implements IEditorGroupView {
 
 	get group(): EditorGroup { throw new Error('not implemented'); }
 	activeControl!: IVisibleEditor;
+	controls: IEditor[] = [];
 	activeEditor!: IEditorInput;
 	previewEditor!: IEditorInput;
 	count!: number;
@@ -551,6 +552,7 @@ export class TestEditorService implements EditorServiceImpl {
 
 	activeControl!: IVisibleEditor;
 	activeTextEditorWidget: any;
+	textEditorWidgets: ReadonlyArray<any> = [];
 	activeTextEditorMode: any;
 	activeEditor!: IEditorInput;
 	editors: ReadonlyArray<IEditorInput> = [];
