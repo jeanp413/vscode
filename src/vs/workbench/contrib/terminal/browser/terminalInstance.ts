@@ -111,8 +111,6 @@ interface IGridDimensions {
 const scrollbarHeight = 5;
 
 export class TerminalInstance extends Disposable implements ITerminalInstance {
-	private static _lastKnownCanvasDimensions: ICanvasDimensions | undefined;
-	private static _lastKnownGridDimensions: IGridDimensions | undefined;
 	private static _instanceIdCounter = 1;
 	private static _suggestedRendererType: 'canvas' | 'dom' | undefined = undefined;
 
@@ -154,7 +152,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	private _titleReadyComplete: ((title: string) => any) | undefined;
 	private _areLinksReady: boolean = false;
 	private _initialDataEvents: string[] | undefined = [];
-	private _containerReadyBarrier: AutoOpenBarrier;
 	private _attachBarrier: AutoOpenBarrier;
 
 	private _messageTitleDisposable: IDisposable | undefined;
@@ -359,28 +356,14 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		}
 
 		this.statusList = this._instantiationService.createInstance(TerminalStatusList);
-		this._initDimensions();
+
 		this._createProcessManager();
 
 		this._register(toDisposable(() => this._dndObserver?.dispose()));
 
-		this._containerReadyBarrier = new AutoOpenBarrier(Constants.WaitForContainerThreshold);
 		this._attachBarrier = new AutoOpenBarrier(1000);
 		this._xtermReadyPromise = this._createXterm();
-		this._xtermReadyPromise.then(async () => {
-			// Wait for a period to allow a container to be ready
-			await this._containerReadyBarrier.wait();
-			await this._createProcess();
-
-			// Re-establish the title after reconnect
-			if (this.shellLaunchConfig.attachPersistentProcess) {
-				this.refreshTabLabels(this.shellLaunchConfig.attachPersistentProcess.title, this.shellLaunchConfig.attachPersistentProcess.titleSource);
-			}
-
-			if (this._fixedCols) {
-				await this._addScrollbar();
-			}
-		});
+		this._createProcess();
 
 		this.addDisposable(this._configurationService.onDidChangeConfiguration(async e => {
 			if (e.affectsConfiguration(TerminalSettingId.GpuAcceleration)) {
@@ -521,23 +504,20 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	 * @param height The height of the container.
 	 * @return The terminal's width if it requires a layout.
 	 */
-	private _evaluateColsAndRows(width: number, height: number): number | null {
+	private _evaluateColsAndRows(width: number, height: number): boolean {
 		// Ignore if dimensions are undefined or 0
 		if (!width || !height) {
-			this._setLastKnownColsAndRows();
-			return null;
+			return false;
 		}
 
 		const dimension = this._getDimension(width, height);
 		if (!dimension) {
-			this._setLastKnownColsAndRows();
-			return null;
+			return false;
 		}
 
 		const font = this._configHelper.getFont(this._xtermCore);
 		if (!font.charWidth || !font.charHeight) {
-			this._setLastKnownColsAndRows();
-			return null;
+			return false;
 		}
 
 		// Because xterm.js converts from CSS pixels to actual pixels through
@@ -560,14 +540,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			this._fireMaximumDimensionsChanged();
 		}
 
-		return dimension.width;
-	}
-
-	private _setLastKnownColsAndRows(): void {
-		if (TerminalInstance._lastKnownGridDimensions) {
-			this._cols = TerminalInstance._lastKnownGridDimensions.cols;
-			this._rows = TerminalInstance._lastKnownGridDimensions.rows;
-		}
+		return true;
 	}
 
 	@debounce(50)
@@ -576,17 +549,10 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 	}
 
 	private _getDimension(width: number, height: number): ICanvasDimensions | undefined {
-		// The font needs to have been initialized
-		const font = this._configHelper.getFont(this._xtermCore);
-		if (!font || !font.charWidth || !font.charHeight) {
-			return undefined;
-		}
-
 		if (!this._wrapperElement) {
 			return undefined;
 		}
-		TerminalInstance._lastKnownCanvasDimensions = new dom.Dimension(width, height - 2 + (this._hasScrollBar && !this._horizontalScrollbar ? -scrollbarHeight : 0)/* bottom padding */);
-		return TerminalInstance._lastKnownCanvasDimensions;
+		return new dom.Dimension(width, height - 2 + (this._hasScrollBar && !this._horizontalScrollbar ? -scrollbarHeight : 0)/* bottom padding */);
 	}
 
 	get persistentProcessId(): number | undefined { return this._processManager.persistentProcessId; }
@@ -616,9 +582,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		const editorOptions = this._configurationService.getValue<IEditorOptions>('editor');
 
 		const xterm = new Terminal({
-			// TODO: Replace null with undefined when https://github.com/xtermjs/xterm.js/issues/3329 is resolved
-			cols: this._cols || null as any,
-			rows: this._rows || null as any,
 			altClickMovesCursor: config.altClickMovesCursor && editorOptions.multiCursorModifier === 'alt',
 			scrollback: config.scrollback,
 			theme: this._getXtermTheme(),
@@ -716,6 +679,11 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		this._pathService.userHome().then(userHome => {
 			this._userHome = userHome.fsPath;
 		});
+
+		if (this._isVisible) {
+			this._open();
+		}
+
 		return xterm;
 	}
 
@@ -731,30 +699,28 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			return;
 		}
 
-		this._attachBarrier.open();
-
-		// Attach has not occurred yet
-		if (!this._wrapperElement) {
-			return this._attachToElement(container);
-		}
-
-		// Update the theme when attaching as the terminal location could have changed
-		if (this._xterm) {
-			this._updateTheme(this._xterm);
-		}
-
 		// The container changed, reattach
 		this._container = container;
-		this._container.appendChild(this._wrapperElement);
-		setTimeout(() => this._initDragAndDrop(container));
+		this._initDragAndDrop(container);
+		if (this._wrapperElement) {
+			this._container.appendChild(this._wrapperElement);
+		}
 	}
 
-	private async _attachToElement(container: HTMLElement): Promise<void> {
-		if (this._wrapperElement) {
-			throw new Error('The terminal instance has already been attached to a container');
+	/**
+	 * Opens the the terminal instance inside the parent DOM element previously set with
+	 * `attachToElement`, you must ensure the parent DOM element is explicitly visible before
+	 * invoking this function as it performs some calculation using the DOM
+	 */
+	private _open(): void {
+		if (this._wrapperElement || !this._xterm) {
+			return;
 		}
 
-		this._container = container;
+		if (!this._container) {
+			throw new Error('A container element needs to be set with `attachToElement` before calling `open`');
+		}
+
 		this._wrapperElement = document.createElement('div');
 		this._wrapperElement.classList.add('terminal-wrapper');
 		this._xtermElement = document.createElement('div');
@@ -762,22 +728,19 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 		this._container.appendChild(this._wrapperElement);
 
-		const xterm = await this._xtermReadyPromise;
-
 		// Attach the xterm object to the DOM, exposing it to the smoke tests
-		this._wrapperElement.xterm = xterm;
+		this._wrapperElement.xterm = this._xterm;
 
-		this._updateTheme(xterm);
-		xterm.open(this._xtermElement);
+		this._updateTheme(this._xterm);
+		this._xterm.open(this._xtermElement);
 
-		if (!xterm.element || !xterm.textarea) {
+		if (!this._xterm.element || !this._xterm.textarea) {
 			throw new Error('xterm elements not set after open');
 		}
 
+		this._setAriaLabel(this._xterm, this._instanceId, this._title);
 
-		this._setAriaLabel(xterm, this._instanceId, this._title);
-
-		xterm.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
+		this._xterm.attachCustomKeyEventHandler((event: KeyboardEvent): boolean => {
 			// Disable all input if the terminal is exiting
 			if (this._isExiting) {
 				return false;
@@ -856,7 +819,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 			return true;
 		});
-		this._register(dom.addDisposableListener(xterm.element, 'mousedown', () => {
+		this._register(dom.addDisposableListener(this._xterm.element, 'mousedown', () => {
 			// We need to listen to the mouseup event on the document since the user may release
 			// the mouse button anywhere outside of _xterm.element.
 			const listener = dom.addDisposableListener(document, 'mouseup', () => {
@@ -866,11 +829,11 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 				listener.dispose();
 			});
 		}));
-		this._register(dom.addDisposableListener(xterm.element, 'touchstart', () => {
-			xterm.focus();
+		this._register(dom.addDisposableListener(this._xterm.element, 'touchstart', () => {
+			this._xterm.focus();
 		}));
 
-		this._register(dom.addDisposableListener(xterm.element, 'wheel', (e) => {
+		this._register(dom.addDisposableListener(this._xterm.element, 'wheel', (e) => {
 			if (this._hasScrollBar && e.shiftKey) {
 				e.stopImmediatePropagation();
 				e.preventDefault();
@@ -878,13 +841,13 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		}));
 
 		// xterm.js currently drops selection on keyup as we need to handle this case.
-		this._register(dom.addDisposableListener(xterm.element, 'keyup', () => {
+		this._register(dom.addDisposableListener(this._xterm.element, 'keyup', () => {
 			// Wait until keyup has propagated through the DOM before evaluating
 			// the new selection state.
 			setTimeout(() => this._refreshSelectionContextKey(), 0);
 		}));
 
-		this._register(dom.addDisposableListener(xterm.textarea, 'focus', () => {
+		this._register(dom.addDisposableListener(this._xterm.textarea, 'focus', () => {
 			this._terminalFocusContextKey.set(true);
 			if (this.shellType) {
 				this._terminalShellTypeContextKey.set(this.shellType.toString());
@@ -894,35 +857,28 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			this._onDidFocus.fire(this);
 		}));
 
-		this._register(dom.addDisposableListener(xterm.textarea, 'blur', () => {
+		this._register(dom.addDisposableListener(this._xterm.textarea, 'blur', () => {
 			this._terminalFocusContextKey.reset();
 			this._onDidBlur.fire(this);
 			this._refreshSelectionContextKey();
 		}));
 
-		this._initDragAndDrop(container);
-
-		this._widgetManager.attachToElement(xterm.element);
+		this._widgetManager.attachToElement(this._xterm.element);
 		this._processManager.onProcessReady((e) => {
 			this._linkManager?.setWidgetManager(this._widgetManager);
 			this._capabilities = e.capabilities;
 			this._workspaceFolder = path.basename(e.cwd.toString());
 		});
 
-		// const computedStyle = window.getComputedStyle(this._container);
-		// const computedStyle = window.getComputedStyle(this._container.parentElement!);
-		// const width = parseInt(computedStyle.getPropertyValue('width').replace('px', ''), 10);
-		// const height = parseInt(computedStyle.getPropertyValue('height').replace('px', ''), 10);
 		if (this._lastLayoutDimensions) {
 			this.layout(this._lastLayoutDimensions);
 		}
-		this.setVisible(this._isVisible);
 		this.updateConfig();
 
 		// If IShellLaunchConfig.waitOnExit was true and the process finished before the terminal
 		// panel was initialized.
-		if (xterm.getOption('disableStdin')) {
-			this._attachPressAnyKeyToCloseListener(xterm);
+		if (this._xterm.getOption('disableStdin')) {
+			this._attachPressAnyKeyToCloseListener(this._xterm);
 		}
 	}
 
@@ -1152,10 +1108,9 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 	setVisible(visible: boolean): void {
 		this._isVisible = visible;
-		if (this._wrapperElement) {
-			this._wrapperElement.classList.toggle('active', visible);
-		}
 		if (visible && this._xterm && this._xtermCore) {
+			this._open();
+
 			// Trigger a manual scroll event which will sync the viewport and scroll bar. This is
 			// necessary if the number of rows in the terminal has decreased while it was in the
 			// background since scrollTop changes take no effect but the terminal's position does
@@ -1281,6 +1236,15 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		});
 		if (!hadIcon && this.shellLaunchConfig.icon || this.shellLaunchConfig.color) {
 			this._onIconChanged.fire(this);
+		}
+
+		// Re-establish the title after reconnect
+		if (this.shellLaunchConfig.attachPersistentProcess) {
+			this.refreshTabLabels(this.shellLaunchConfig.attachPersistentProcess.title, this.shellLaunchConfig.attachPersistentProcess.titleSource);
+		}
+
+		if (this._fixedCols) {
+			await this._addScrollbar();
 		}
 	}
 
@@ -1479,7 +1443,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		// Set the new shell launch config
 		this._shellLaunchConfig = shell; // Must be done before calling _createProcess()
 
-		this._processManager.relaunch(this._shellLaunchConfig, this._cols || Constants.DefaultCols, this._rows || Constants.DefaultRows, this._accessibilityService.isScreenReaderOptimized(), reset);
+		this._processManager.relaunch(this._shellLaunchConfig, this._cols, this._rows, this._accessibilityService.isScreenReaderOptimized(), reset);
 
 		this._xtermTypeAhead?.reset();
 	}
@@ -1703,15 +1667,11 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			return;
 		}
 
-		const terminalWidth = this._evaluateColsAndRows(dimension.width, dimension.height);
-		if (!terminalWidth) {
+		if (!this._xterm?.element) {
 			return;
 		}
 
 		this._resize();
-
-		// Signal the container is ready
-		this._containerReadyBarrier.open();
 	}
 
 	@debounce(50)
@@ -1723,7 +1683,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 		let cols = this.cols;
 		let rows = this.rows;
 
-		if (this._xterm && this._xtermCore) {
+		if (this._xterm?.element) {
 			// Only apply these settings when the terminal is visible so that
 			// the characters are measured correctly.
 			if (this._isVisible) {
@@ -1738,7 +1698,7 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 
 				// Any of the above setting changes could have changed the dimensions of the
 				// terminal, re-evaluate now.
-				this._initDimensions();
+				this._evaluateColsAndRows(this._lastLayoutDimensions!.width, this._lastLayoutDimensions!.height);
 				cols = this.cols;
 				rows = this.rows;
 			}
@@ -1755,7 +1715,6 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 			}
 
 			this._xterm.resize(cols, rows);
-			TerminalInstance._lastKnownGridDimensions = { cols, rows };
 
 			if (this._isVisible) {
 				// HACK: Force the renderer to unpause by simulating an IntersectionObserver event.
@@ -1763,19 +1722,19 @@ export class TerminalInstance extends Disposable implements ITerminalInstance {
 				// maximize on Windows/Linux would fire an event saying that the terminal was not
 				// visible.
 				if (this._xterm.getOption('rendererType') === 'canvas') {
-					this._xtermCore._renderService?._onIntersectionChange({ intersectionRatio: 1 });
+					this._xtermCore!._renderService?._onIntersectionChange({ intersectionRatio: 1 });
 					// HACK: Force a refresh of the screen to ensure links are refresh corrected.
 					// This can probably be removed when the above hack is fixed in Chromium.
 					this._xterm.refresh(0, this._xterm.rows - 1);
 				}
 			}
-		}
 
-		if (immediate) {
-			// do not await, call setDimensions synchronously
-			this._processManager.setDimensions(cols, rows, true);
-		} else {
-			await this._processManager.setDimensions(cols, rows);
+			if (immediate) {
+				// do not await, call setDimensions synchronously
+				this._processManager.setDimensions(cols, rows, true);
+			} else {
+				await this._processManager.setDimensions(cols, rows);
+			}
 		}
 	}
 

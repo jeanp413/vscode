@@ -768,9 +768,6 @@ export class TerminalService implements ITerminalService {
 
 		group.addInstance(source);
 		this.setActiveInstance(source);
-		await this._terminalGroupService.showPanel(true);
-		// TODO: Shouldn't this happen automatically?
-		source.setVisible(true);
 
 		if (target && side) {
 			const index = group.terminalInstances.indexOf(target) + (side === 'after' ? 1 : 0);

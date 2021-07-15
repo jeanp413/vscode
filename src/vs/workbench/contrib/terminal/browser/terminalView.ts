@@ -144,13 +144,9 @@ export class TerminalViewPane extends ViewPane {
 					}
 				}
 
-				if (hadTerminals) {
-					this._terminalGroupService.activeGroup?.setVisible(visible);
-				}
 				this._terminalGroupService.showPanel(true);
-			} else {
-				this._terminalGroupService.activeGroup?.setVisible(false);
 			}
+			this._terminalGroupService.updateVisibility();
 		}));
 		this.layoutBody(this._parentDomElement.offsetHeight, this._parentDomElement.offsetWidth);
 	}

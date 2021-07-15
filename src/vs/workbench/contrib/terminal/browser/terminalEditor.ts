@@ -196,7 +196,7 @@ export class TerminalEditor extends EditorPane {
 
 	override setVisible(visible: boolean, group?: IEditorGroup): void {
 		super.setVisible(visible, group);
-		return this._editorInput?.terminalInstance?.setVisible(visible);
+		this._editorInput?.terminalInstance?.setVisible(visible);
 	}
 
 	override getActionViewItem(action: IAction): IActionViewItem | undefined {

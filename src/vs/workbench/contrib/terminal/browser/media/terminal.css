@@ -39,7 +39,6 @@
 
 .monaco-workbench .editor-instance .terminal-wrapper,
 .monaco-workbench .pane-body.integrated-terminal .terminal-wrapper {
-	display: none;
 	margin: 0 10px;
 	height: 100%;
 	padding-bottom: 2px;
