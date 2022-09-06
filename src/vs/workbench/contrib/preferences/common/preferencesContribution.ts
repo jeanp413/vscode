@@ -94,6 +94,9 @@ export class PreferencesContribution implements IWorkbenchContribution {
 						}
 
 						return { editor: this.textEditorService.createTextEditor({ resource }), options };
+					},
+					createMergeEditorInput: (mergeEditorInput): EditorInputWithOptions => {
+						return { editor: this.preferencesService.createMergeEditorInput(mergeEditorInput) };
 					}
 				}
 			);

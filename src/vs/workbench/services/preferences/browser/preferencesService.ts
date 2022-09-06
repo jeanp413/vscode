@@ -27,7 +27,7 @@ import { ILabelService } from 'vs/platform/label/common/label';
 import { INotificationService } from 'vs/platform/notification/common/notification';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { IWorkspaceContextService, WorkbenchState } from 'vs/platform/workspace/common/workspace';
-import { DEFAULT_EDITOR_ASSOCIATION, IEditorPane } from 'vs/workbench/common/editor';
+import { DEFAULT_EDITOR_ASSOCIATION, IEditorPane, IResourceMergeEditorInput } from 'vs/workbench/common/editor';
 import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { SideBySideEditorInput } from 'vs/workbench/common/editor/sideBySideEditorInput';
 import { TextResourceEditorInput } from 'vs/workbench/common/editor/textResourceEditorInput';
@@ -45,6 +45,8 @@ import { isObject } from 'vs/base/common/types';
 import { SuggestController } from 'vs/editor/contrib/suggest/browser/suggestController';
 import { IUserDataProfileService } from 'vs/workbench/services/userDataProfile/common/userDataProfile';
 import { IUserDataProfilesService } from 'vs/platform/userDataProfile/common/userDataProfile';
+import { MergeEditorInput } from 'vs/workbench/contrib/mergeEditor/browser/mergeEditorInput';
+import { basename } from 'vs/base/common/resources';
 
 const emptyEditableSettingsContent = '{\n}';
 
@@ -376,6 +378,26 @@ export class PreferencesService extends Disposable implements IPreferencesServic
 		const editableSettingsEditorInput = this.textEditorService.createTextEditor({ resource });
 		const defaultPreferencesEditorInput = this.instantiationService.createInstance(TextResourceEditorInput, this.getDefaultSettingsResource(configurationTarget), undefined, undefined, undefined, undefined);
 		return this.instantiationService.createInstance(SideBySideEditorInput, editableSettingsEditorInput.getName(), undefined, defaultPreferencesEditorInput, editableSettingsEditorInput);
+	}
+
+	public createMergeEditorInput(mergeEditor: IResourceMergeEditorInput): EditorInput {
+		return this.instantiationService.createInstance(
+			MergeEditorInput,
+			mergeEditor.base.resource,
+			{
+				uri: mergeEditor.input1.resource,
+				title: mergeEditor.input1.label ?? basename(mergeEditor.input1.resource),
+				description: mergeEditor.input1.description ?? '',
+				detail: mergeEditor.input1.detail
+			},
+			{
+				uri: mergeEditor.input2.resource,
+				title: mergeEditor.input2.label ?? basename(mergeEditor.input2.resource),
+				description: mergeEditor.input2.description ?? '',
+				detail: mergeEditor.input2.detail
+			},
+			mergeEditor.result.resource
+		);
 	}
 
 	public createSettings2EditorModel(): Settings2EditorModel {

@@ -16,7 +16,7 @@ import { ConfigurationScope, EditPresentationTypes, IExtensionInfo } from 'vs/pl
 import { IEditorOptions } from 'vs/platform/editor/common/editor';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { ResolvedKeybindingItem } from 'vs/platform/keybinding/common/resolvedKeybindingItem';
-import { DEFAULT_EDITOR_ASSOCIATION, IEditorPane } from 'vs/workbench/common/editor';
+import { DEFAULT_EDITOR_ASSOCIATION, IEditorPane, IResourceMergeEditorInput } from 'vs/workbench/common/editor';
 import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { Settings2EditorModel } from 'vs/workbench/services/preferences/common/preferencesModels';
 
@@ -244,6 +244,7 @@ export interface IPreferencesService {
 	getEditableSettingsURI(configurationTarget: ConfigurationTarget, resource?: URI): Promise<URI | null>;
 
 	createSplitJsonEditorInput(configurationTarget: ConfigurationTarget, resource: URI): EditorInput;
+	createMergeEditorInput(mergeEditorInput: IResourceMergeEditorInput): EditorInput;
 }
 
 export interface KeybindingMatch {
